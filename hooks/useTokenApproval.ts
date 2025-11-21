@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Token } from '@uniswap/sdk-core';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi';
 import { parseUnits, formatUnits, maxUint256 } from 'viem';
@@ -37,13 +38,15 @@ export function useTokenApproval(token: Token | null, amount: string) {
     ? parseUnits(amount, token.decimals)
     : BigInt(0);
 
-  const { data: allowance, isLoading: isLoadingAllowance } = useReadContract({
+  const { data: allowance, isLoading: isLoadingAllowance, refetch: refetchAllowance } = useReadContract({
     address: token?.address as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'allowance',
     args: address && token ? [address, routerAddress] : undefined,
     query: {
       enabled: !!token && !!address && token.symbol !== 'ETH' && token.symbol !== 'WETH',
+      refetchOnWindowFocus: true, // Refetch when window regains focus
+      refetchInterval: 10000, // Refetch every 10 seconds to keep allowance updated
     },
   });
 
@@ -51,6 +54,19 @@ export function useTokenApproval(token: Token | null, amount: string) {
   const { isLoading: isApproving, isSuccess: isApproved } = useWaitForTransactionReceipt({
     hash: approveHash,
   });
+
+  // Refetch allowance after successful approval to update UI immediately
+  useEffect(() => {
+    if (isApproved && refetchAllowance && token && address) {
+      console.log('[Approval] Transaction confirmed, refetching allowance...');
+      // Small delay to ensure blockchain state is updated after transaction confirmation
+      const timeoutId = setTimeout(() => {
+        refetchAllowance();
+      }, 1500);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isApproved, refetchAllowance, token, address]);
 
   const needsApproval =
     token &&
